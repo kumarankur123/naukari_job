@@ -6,26 +6,35 @@
 =============================================================
 """
 
+import sys
 import json
 import os
 from datetime import datetime
 from collections import Counter
 
-LOG_FILE  = "naukri_applications_log.json"
-SKIP_FILE = "skip_list.json"
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE  = os.path.join(BASE_DIR, "naukri_applications_log.json")
+SKIP_FILE = os.path.join(BASE_DIR, "skip_list.json")
 
 def load_logs():
     if not os.path.exists(LOG_FILE):
         print(f"\n  ✗ Log file not found: {LOG_FILE}")
         print("  Make sure you run this script from the same folder as your bot.\n")
         return []
-    with open(LOG_FILE) as f:
+    with open(LOG_FILE, encoding="utf-8", errors="ignore") as f:
         return json.load(f)
 
 def load_skips():
     if not os.path.exists(SKIP_FILE):
         return []
-    with open(SKIP_FILE) as f:
+    with open(SKIP_FILE, encoding="utf-8", errors="ignore") as f:
         return json.load(f)
 
 def print_divider():
