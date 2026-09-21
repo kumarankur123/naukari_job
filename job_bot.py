@@ -53,6 +53,7 @@ NOTICE_PERIOD    = os.getenv("NOTICE_PERIOD", "30")
 CURRENT_CTC      = os.getenv("CURRENT_CTC", "")
 EXPECTED_CTC     = os.getenv("EXPECTED_CTC", "")
 MIN_SALARY_LPA   = float(os.getenv("MIN_SALARY_LPA", "12"))
+APPLY_TIMEOUT_SECONDS = int(os.getenv("APPLY_TIMEOUT_SECONDS", "10"))
 
 DEFAULT_KEYWORDS = "AI Engineer, Gen AI Engineer, Generative AI, Data Scientist, Machine Learning Engineer, ML Engineer, LLM Engineer, Data Engineer, Python Developer, Backend Developer, Full Stack Developer, Software Engineer, Software Developer, Data Analyst"
 RAW_KEYWORDS     = os.getenv("SEARCH_KEYWORDS", DEFAULT_KEYWORDS)
@@ -265,17 +266,18 @@ async def close_popups(page):
 # ─────────────────────────────────────────────
 #  CHATBOT AUTO-ANSWER ENGINE (100% POSITIVE & AFFIRMATIVE)
 # ─────────────────────────────────────────────
-async def handle_chatbot(page):
+async def handle_chatbot(page, max_seconds=APPLY_TIMEOUT_SECONDS):
     """
     Handles Naukri's screening chatbot drawer / modal.
     Automatically detects questions, radio options, checkboxes, and text/contenteditable fields,
     answers everything positively (matching user profile: experience, notice period, CTC, skills, etc.),
     and clicks Save / Submit to advance until the application is fully submitted.
+    If question flow exceeds max_seconds or cannot be answered, aborts cleanly and returns 'timeout'.
     """
-    # Wait for drawer animation
+    # Quick check for drawer animation (check every 250ms, max 1.5s)
     drawer_found = False
-    for _ in range(8):
-        await page.wait_for_timeout(500)
+    for _ in range(6):
+        await page.wait_for_timeout(250)
         has_drawer = await page.evaluate("""() => {
             const d = document.querySelector('.chatbot_Drawer, [class*="chatbot_Drawer"]');
             return d && d.offsetWidth > 100 && d.offsetHeight > 100;
@@ -287,10 +289,24 @@ async def handle_chatbot(page):
     if not drawer_found:
         return False
 
-    print("  💬 Screening Chatbot detected — auto-answering questions positively...")
+    print(f"  💬 Screening Chatbot detected — auto-answering questions (⏱️ {max_seconds}s timer)...")
+    start_time = asyncio.get_event_loop().time()
 
-    for attempt in range(25):
-        await page.wait_for_timeout(1200)
+    for attempt in range(15):
+        # ── 0. Strict Timeout Check ──
+        elapsed = asyncio.get_event_loop().time() - start_time
+        if elapsed >= max_seconds:
+            print(f"    ⏱️ Chatbot questions timed out (> {max_seconds}s limit) — aborting question popup")
+            try:
+                await page.evaluate("""() => {
+                    const cross = document.querySelector('.chatbot_Drawer .crossIcon, [class*="chatbot"] [class*="close"], button[aria-label="close"]');
+                    if (cross) cross.click();
+                }""")
+            except Exception:
+                pass
+            return "timeout"
+
+        await page.wait_for_timeout(350)
 
         # ── 1. Check if application is already completed or drawer closed ──
         status = await page.evaluate("""() => {
@@ -582,21 +598,21 @@ async def handle_chatbot(page):
         if not save_clicked:
             await page.keyboard.press("Enter")
 
-        await page.wait_for_timeout(1500)
+        await page.wait_for_timeout(500)
 
-        # If nothing could be answered for several attempts, close
-        if attempt >= 12 and not answered:
+        # If nothing could be answered after multiple attempts, abort and return timeout
+        if attempt >= 5 and not answered:
+            print("    ⚠️ Could not auto-answer screening questions — aborting chatbot")
             try:
                 await page.evaluate("""() => {
-                    const cross = document.querySelector('.chatbot_Drawer .crossIcon, [class*="close"], button[aria-label="close"]');
+                    const cross = document.querySelector('.chatbot_Drawer .crossIcon, [class*="chatbot"] [class*="close"], button[aria-label="close"]');
                     if (cross) cross.click();
                 }""")
             except Exception:
                 pass
-            break
+            return "timeout"
 
-    await page.wait_for_timeout(1000)
-    return True
+    return "timeout"
 
 
 # ─────────────────────────────────────────────
@@ -761,38 +777,64 @@ async def apply_single_job(context, job_url, title, company):
         if not apply_btn:
             return "no-apply-button"
 
-        # Click the Apply button
-        btn_text = (await apply_btn.inner_text()).strip()
-        print(f"      → Clicking '{btn_text}'")
-        await apply_btn.click()
-        await job_page.wait_for_timeout(2000)
+        # Apply + Screening Question handling with strict timeout
+        async def _do_apply_and_answers():
+            btn_text = (await apply_btn.inner_text()).strip()
+            print(f"      → Clicking '{btn_text}' (⏱️ {APPLY_TIMEOUT_SECONDS}s timer started)")
+            await apply_btn.click()
+            await job_page.wait_for_timeout(1000)
 
-        # Check if daily application limit or processing error popup/toast appeared
-        alert_result = await job_page.evaluate(r"""() => {
-            const alerts = Array.from(document.querySelectorAll('[class*="toast"], [class*="alert"], [class*="modal"], [class*="error-container"], [class*="popup"], [class*="notify"]'));
-            for (let a of alerts) {
-                const t = (a.innerText || '').toLowerCase();
-                if ((t.includes('daily') && (t.includes('limit') || t.includes('quota'))) || t.includes('maximum applications allowed')) {
-                    return "daily-limit-reached";
+            # Check if daily application limit or processing error popup/toast appeared
+            alert_result = await job_page.evaluate(r"""() => {
+                const alerts = Array.from(document.querySelectorAll('[class*="toast"], [class*="alert"], [class*="modal"], [class*="error-container"], [class*="popup"], [class*="notify"]'));
+                for (let a of alerts) {
+                    const t = (a.innerText || '').toLowerCase();
+                    if ((t.includes('daily') && (t.includes('limit') || t.includes('quota'))) || t.includes('maximum applications allowed')) {
+                        return "daily-limit-reached";
+                    }
+                    if (t.includes('error while processing') || t.includes('error processing') || t.includes('try again later') || t.includes('something went wrong')) {
+                        return "processing-error";
+                    }
                 }
-                if (t.includes('error while processing') || t.includes('error processing') || t.includes('try again later') || t.includes('something went wrong')) {
-                    return "processing-error";
+                return null;
+            }""")
+
+            if alert_result in ("daily-limit-reached", "processing-error"):
+                return alert_result
+
+            # Handle screening chatbot if it appears
+            chat_status = await handle_chatbot(job_page, max_seconds=APPLY_TIMEOUT_SECONDS)
+            if chat_status == "timeout":
+                return "timeout"
+
+            # Check if drawer or question popup is still stuck open and unsubmitted
+            is_stuck = await job_page.evaluate("""() => {
+                const drawer = document.querySelector('.chatbot_Drawer, [class*="chatbot_Drawer"]');
+                if (drawer && drawer.offsetWidth > 100 && drawer.offsetHeight > 100) {
+                    const txt = (drawer.innerText || '').toLowerCase();
+                    if (!txt.includes('submitted') && !txt.includes('applied') && !txt.includes('sent')) {
+                        return true;
+                    }
                 }
-            }
-            return null;
-        }""")
+                return false;
+            }""")
+            if is_stuck:
+                return "timeout"
 
-        if alert_result == "daily-limit-reached":
-            return "daily-limit-reached"
-        if alert_result == "processing-error":
-            return "processing-error"
+            await job_page.wait_for_timeout(500)
+            await close_popups(job_page)
+            return "applied"
 
-        # Handle screening chatbot if it appears
-        await handle_chatbot(job_page)
-        await job_page.wait_for_timeout(1000)
-        await close_popups(job_page)
-
-        return "applied"
+        try:
+            apply_res = await asyncio.wait_for(_do_apply_and_answers(), timeout=float(APPLY_TIMEOUT_SECONDS))
+            return apply_res
+        except asyncio.TimeoutError:
+            print(f"      ⏱️ {APPLY_TIMEOUT_SECONDS}s Timeout: Question popup 10 sec me complete nahi hua — auto-skipping!")
+            try:
+                await close_popups(job_page)
+            except Exception:
+                pass
+            return "timeout"
 
     except Exception as e:
         print(f"      ❌ Error applying to {title}: {e}")
@@ -914,7 +956,11 @@ async def run_search_mode(context, skip_list, total_applied):
                             continue
 
                         print(f"  👉 Checking: {title} @ {company}")
-                        res = await apply_single_job(context, url, title, company)
+                        try:
+                            res = await asyncio.wait_for(apply_single_job(context, url, title, company), timeout=25.0)
+                        except asyncio.TimeoutError:
+                            print(f"    ⏱️ Overall timeout on {title} (>25s) — skipping forever.")
+                            res = "timeout"
 
                         if res == "applied":
                             log_job(title, company, "applied")
@@ -944,13 +990,16 @@ async def run_search_mode(context, skip_list, total_applied):
                                 return total_applied, True
                         elif res == "low-salary":
                             skip_list = add_to_skip(skip_list, title, company, "low-salary")
+                        elif res == "timeout":
+                            print(f"    ⏱️ {APPLY_TIMEOUT_SECONDS}s Timeout: Question popup me atak gaya tha — auto-skipping.")
+                            skip_list = add_to_skip(skip_list, title, company, "questionnaire-timeout")
+                            print(f"    ⛔ Job ko permanently skip list me daal diya taaki dubara kabhi na aaye.\n")
                         else:
-                            if res in ("already-applied", "external-company-site", "no-apply-button"):
-                                skip_list = add_to_skip(skip_list, title, company, res)
-                            else:
-                                print(f"    ⚠️ Skipping {title} for now ({res})\n")
+                            skip_list = add_to_skip(skip_list, title, company, res)
+                            print(f"    ⛔ Skipped {title} forever ({res})\n")
                     except Exception as single_job_err:
                         print(f"    ⚠️ Warning on {job.get('title')}: {single_job_err}")
+                        skip_list = add_to_skip(skip_list, job.get('title', 'Unknown'), job.get('company', 'Unknown'), "error")
                         continue
 
     except Exception as search_err:
@@ -982,7 +1031,8 @@ async def run():
     skip_list = load_skip_list()
     print(f"  📋 Loaded {len(skip_list)} previously skipped jobs")
     print(f"  💰 Minimum Salary Filter: >= {MIN_SALARY_LPA} LPA (or Undisclosed)")
-    print(f"  🎯 Priority Roles: AI Engineer, Data Scientist, Gen AI, ML (Applied First!)\n")
+    print(f"  🎯 Priority Roles: AI Engineer, Data Scientist, Gen AI, ML (Applied First!)")
+    print(f"  ⏱️ Apply & Question Timer: {APPLY_TIMEOUT_SECONDS}s (stuck question popups auto-skipped forever)\n")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -1193,8 +1243,19 @@ async def run():
                         batch_num += 1
                         continue
 
-                    await handle_chatbot(page)
-                    await page.wait_for_timeout(1000)
+                    try:
+                        chat_res = await handle_chatbot(page, max_seconds=APPLY_TIMEOUT_SECONDS)
+                        if chat_res == "timeout":
+                            print(f"  ⏱️ {APPLY_TIMEOUT_SECONDS}s Timeout: Question popup in recommended batch took too long — skipping this batch")
+                            for item in selected:
+                                skip_list = add_to_skip(skip_list, item['title'], item['company'], "questionnaire-timeout")
+                            await close_popups(page)
+                            scroll_count += 1
+                            batch_num += 1
+                            continue
+                    except Exception as chat_err:
+                        print(f"  ⚠️ Chatbot warning: {chat_err}")
+                    await page.wait_for_timeout(500)
                     await close_popups(page)
 
                     success = False
