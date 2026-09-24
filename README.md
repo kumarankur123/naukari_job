@@ -1,284 +1,339 @@
-# 🤖 Naukri Auto Apply Bot — v10 SMART SKIP
+# 🤖 Naukri Auto Apply Bot
 
-A Python + Playwright headless automation bot that applies to 100+ jobs daily on Naukri.com — fully automated, with smart skip logic, recruiter chatbot handling, and persistent application logging.
+An intelligent, fully automated job application bot for [Naukri.com](https://www.naukri.com) powered by **Python** and **Playwright**. It searches for target job titles, filters out low-paying roles, auto-answers recruiter screening questionnaires, logs all applied jobs, and prevents duplicate applications across runs using persistent skip tracking.
 
-> Built by [Ajaykumar Gupta](https://linkedin.com/in/ajaykumar-gupta-62a640286)
+---
+
+## 📑 Table of Contents
+
+- [Features](#-features)
+- [Project Architecture & Files](#-project-architecture--files)
+- [Prerequisites](#-prerequisites)
+- [Setup & Installation](#-setup--installation)
+- [Configuring `.env` (Environment Variables)](#-configuring-env-environment-variables)
+- [Customizing Search Keywords](#-customizing-search-keywords)
+- [How to Run the Bot](#-how-to-run-the-bot)
+- [How to Stop the Bot](#-how-to-stop-the-bot)
+- [Checking Application Stats & Logs](#-checking-application-stats--logs)
+- [How the Smart Logic Works](#-how-the-smart-logic-works)
+- [Troubleshooting & FAQs](#-troubleshooting--faqs)
 
 ---
 
 ## ✨ Features
 
-- ✅ **Auto login** to Naukri.com with session handling
-- ✅ **Batch applies** to recommended jobs (5 per batch)
-- ✅ **Smart skip list** — failed/applied jobs saved to `skip_list.json`, never picked up again across runs
-- ✅ **Recruiter chatbot handler** — auto-answers notice period, CTC, experience questions
-- ✅ **Error detection** — skips jobs that throw application errors
-- ✅ **Application logger** — every application saved to `naukri_applications_log.json`
-- ✅ **Daily stats** — session count + today's total shown in terminal
-- ✅ **Debug screenshots** — saved automatically on errors
-- ✅ **Runs forever** until you press `Ctrl+C`
+- 🔑 **Automatic Login:** Securely logs in to your Naukri account with automated credential entry.
+- 🎯 **Targeted Keyword Search:** Searches across custom job titles (e.g. *AI Engineer*, *Data Scientist*, *Backend Developer*).
+- 🧠 **Priority Role Engine:** Automatically prioritizes AI, Machine Learning, and Data Science roles first before general roles.
+- 💰 **Salary Filter (LPA):** Skips jobs below your minimum salary threshold (e.g., minimum 12 LPA). Keeps confidential / undisclosed salary jobs so you don't miss out on high-paying stealth roles.
+- 💬 **Recruiter Chatbot Auto-Fill:** Automatically detects and answers common screening questions (Notice Period, Current CTC, Expected CTC, Total Experience, Yes/No questions).
+- ⚡ **Anti-Hang Timeout:** Automatically skips problematic jobs that get stuck loading questions after a customizable timeout (default 10s).
+- 🛑 **Permanent Skip List:** Stores applied and rejected job IDs in `skip_list.json` so you never waste time or apply twice to the same posting.
+- 📊 **Detailed Stats & Logging:** Every applied job is saved with timestamp, company name, salary, and job title to `naukri_applications_log.json`.
 
 ---
 
-## 🛠️ Tech Stack
+## 📁 Project Architecture & Files
 
-| Tool | Purpose |
-|------|---------|
-| Python 3.x | Core language |
-| Playwright (async) | Headless browser automation |
-| python-dotenv | Secure credential loading from `.env` |
-| JSON | Skip list & application log storage |
-
----
-
-## 📁 Project Structure
-
-```
-naukri-auto-apply-bot/
-├── naukri_bot.py                 # Main bot script
-├── stats.py                      # Application stats tracker
-├── requirements.txt              # Python dependencies
-├── .env.example                  # Credential template (copy to .env)
-├── .gitignore                    # Keeps .env and logs off GitHub
-├── skip_list.json                # Auto-generated: tracks skipped jobs
-├── naukri_applications_log.json  # Auto-generated: all application records
-└── debug_screenshots/            # Auto-generated: error screenshots
+```text
+apply_job/
+├── .env                          # Your private configuration & credentials (DO NOT COMMIT)
+├── .env.example                  # Template showing all available settings
+├── job_bot.py                    # Main automation script (Playwright engine)
+├── naukri_bot.py                 # Convenience wrapper pointing to job_bot.py
+├── check_jobs.py                 # Analytics & statistics visualizer
+├── stats.py                      # Convenience wrapper pointing to check_jobs.py
+├── run_bot.bat                   # 1-Click batch launcher for Windows
+├── check_stats.bat               # 1-Click statistics viewer for Windows
+├── requirements.txt              # Required Python packages
+├── naukri_applications_log.json  # Auto-generated log of all successful applications
+├── skip_list.json                # Auto-generated database of skipped / already-applied jobs
+└── debug_screenshots/            # Automated error/debug captures taken during runtime
 ```
 
 ---
 
-## 🚀 How to Run — Step by Step
+## 💻 Prerequisites
 
-### ✅ Prerequisites
+1. **Operating System:** Windows 10/11, macOS, or Linux.
+2. **Python:** Version **3.9 or higher** ([Download from python.org](https://www.python.org/downloads/)).
+   Verify your version:
+   ```powershell
+   python --version
+   ```
+3. **Naukri Account:** An active account with an updated profile and uploaded resume.
 
-Before running the bot, make sure you have the following installed on your system:
+---
 
-- **Python 3.8 or above**
-  Check by running:
-  ```bash
-  python3 --version
+## 🚀 Setup & Installation
+
+### Step 1: Open the Project Directory
+
+Open PowerShell or Command Prompt in the `apply_job` folder:
+
+```powershell
+cd C:\Users\ank79\OneDrive\Desktop\job_j\apply_job
+```
+
+### Step 2: Create a Virtual Environment (Recommended)
+
+```powershell
+python -m venv .venv
+```
+
+### Step 3: Activate the Virtual Environment
+
+- **PowerShell:**
+  ```powershell
+  .\.venv\Scripts\Activate.ps1
   ```
-  If not installed, download from [python.org](https://www.python.org/downloads/)
+  *(If PowerShell gives an execution policy error, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first)*
 
-- **pip** (comes with Python)
-  Check by running:
-  ```bash
-  pip --version
+- **Command Prompt (CMD):**
+  ```cmd
+  .\.venv\Scripts\activate.bat
   ```
 
----
+### Step 4: Install Dependencies
 
-### Step 1 — Clone or Download the Project
-
-**Option A — Clone via Git:**
-```bash
-git clone https://github.com/YOUR_USERNAME/naukri-auto-apply-bot.git
-cd naukri-auto-apply-bot
-```
-
-**Option B — Download ZIP:**
-- Click the green **Code** button on GitHub → **Download ZIP**
-- Extract the folder and open Terminal inside it
-
----
-
-### Step 2 — Install Python Dependencies
-
-```bash
+```powershell
 pip install -r requirements.txt
 ```
 
-This installs:
-- `playwright` — browser automation
-- `python-dotenv` — loads your `.env` credentials securely
+### Step 5: Install Playwright Browsers
 
----
+Playwright requires Chromium binaries to automate the browser:
 
-### Step 3 — Install the Chromium Browser
-
-Playwright needs its own browser to run. Install it with:
-
-```bash
+```powershell
 playwright install chromium
 ```
 
-> ⚠️ This is a one-time step. It downloads a ~150MB Chromium binary — make sure you have internet and space.
-
 ---
 
-### Step 4 — Set Up Your Credentials
+## ⚙️ Configuring `.env` (Environment Variables)
 
-The bot reads all personal details from a `.env` file. This file is **never pushed to GitHub** (it's in `.gitignore`).
+Create your `.env` configuration file by copying the template:
 
-**Create your `.env` file:**
-```bash
-cp .env.example .env
+```powershell
+copy .env.example .env
 ```
 
-**Open the `.env` file** in any text editor and fill in your details:
+Open `.env` in any text editor (VS Code, Notepad, etc.) and configure the parameters:
 
 ```env
-# Your Naukri login
-NAUKRI_EMAIL=your_email@gmail.com
+# =============================================================
+#  Naukri Auto Apply Bot Credentials & Details
+# =============================================================
+
+# 1. Your Naukri Account Credentials
+NAUKRI_EMAIL=your_email@example.com
 NAUKRI_PASSWORD=your_naukri_password
 
-# Your profile details (used to answer recruiter chatbot questions)
-NOTICE_PERIOD=30          # How many days notice period (e.g. 30, 60, 90)
-CURRENT_CTC=8             # Your current CTC in LPA (e.g. 8 means 8 LPA)
-EXPECTED_CTC=12           # Your expected CTC in LPA
-TOTAL_EXPERIENCE=5        # Total years of experience (e.g. 5)
+# 2. Minimum Salary Filter (in LPA)
+# Disclosed jobs paying less than this maximum are skipped.
+# Undisclosed / confidential salaries are always allowed.
+MIN_SALARY_LPA=12
+
+# 3. Target Search Keywords (comma-separated)
+SEARCH_KEYWORDS=AI Engineer, Data Scientist, Gen AI Engineer, Machine Learning Engineer, ML Engineer, Data Engineer, Python Developer, Backend Developer, Full Stack Developer, Software Engineer, Software Developer, Data Analyst
+
+# 4. Profile Details (Used to auto-answer recruiter chatbot questions)
+TOTAL_EXPERIENCE=2        # Total years of experience (numeric, e.g. 1, 2, 5)
+NOTICE_PERIOD=30          # Notice period in days (e.g. 15, 30, 60, 90)
+CURRENT_CTC=11            # Current CTC in LPA (numeric, e.g. 11 for 11 LPA)
+EXPECTED_CTC=15           # Expected CTC in LPA (numeric, e.g. 15 for 15 LPA)
+
+# 5. Search & Execution Limits
+MAX_APPLIES_PER_KEYWORD=50     # Max applications to submit per keyword before moving to next
+APPLY_TIMEOUT_SECONDS=10       # Max seconds to wait for question form before skipping a job
 ```
 
-> 💡 **Tip:** Use the exact same email and password you use to log into Naukri.com manually.
+### Explanation of Environment Variables:
+
+| Variable | Type | Description |
+| :--- | :--- | :--- |
+| `NAUKRI_EMAIL` | String | Email address used to log into Naukri.com. |
+| `NAUKRI_PASSWORD` | String | Password for your Naukri account. |
+| `MIN_SALARY_LPA` | Number | Threshold in LPA (Lacs Per Annum). E.g. `12` rejects jobs disclosing `6-8 LPA` or `8-11 LPA`, but allows `12-18 LPA` or "Not Disclosed". |
+| `SEARCH_KEYWORDS` | String | Comma-separated list of keywords to search and apply for on Naukri. |
+| `TOTAL_EXPERIENCE`| Integer | Number of years of experience to enter into screening form questions. |
+| `NOTICE_PERIOD` | Integer | Number of days (e.g. `15`, `30`, `60`, `90`) entered for notice period questions. |
+| `CURRENT_CTC` | Number | Current compensation in Lakhs per annum entered in recruiter questionnaires. |
+| `EXPECTED_CTC` | Number | Expected compensation in Lakhs per annum entered in recruiter questionnaires. |
+| `MAX_APPLIES_PER_KEYWORD` | Integer | Limits applications per keyword to keep search results fresh. |
+| `APPLY_TIMEOUT_SECONDS` | Integer | Timeout limit in seconds to prevent the bot from hanging on broken job dialogs. |
 
 ---
 
-### Step 5 — (Optional) Update Your Naukri Profile First
+## 🔍 Customizing Search Keywords
 
-Before running the bot, make sure your Naukri profile is **100% complete** and your **resume is up to date**. The bot applies using your existing Naukri profile — an incomplete profile means fewer callbacks.
+The bot reads `SEARCH_KEYWORDS` from `.env`, cleans each keyword, and runs automated searches sequentially.
 
-**Recommended Naukri profile settings:**
-- Upload an updated resume
-- Set your preferred job roles and locations
-- Set your expected salary range
-- Enable "Open to opportunities" status
-
-> The bot applies to your **Recommended Jobs** section on Naukri, which is personalised based on your profile.
-
----
-
-### Step 6 — Run the Bot
-
-```bash
-python3 naukri_bot.py
+### How to customize:
+Edit line 13 in `.env`:
+```env
+SEARCH_KEYWORDS=keyword 1, keyword 2, keyword 3
 ```
 
-The bot will:
-1. Open a Chrome browser window (you will see it)
-2. Log in to Naukri automatically
-3. Navigate to your Recommended Jobs page
-4. Start selecting and applying to jobs in batches of 5
-5. Answer any recruiter chatbot questions automatically
-6. Log every application to `naukri_applications_log.json`
-7. Save failed/problematic jobs to `skip_list.json`
-8. Keep running until you press `Ctrl+C`
+### Tailored Keyword Configurations:
 
----
-
-### Step 7 — Check Your Stats
-
-After running, see how many jobs were applied to:
-
-```bash
-python3 stats.py
+#### 1. AI, ML & Generative AI Profiles:
+```env
+SEARCH_KEYWORDS=AI Engineer, Gen AI Engineer, Generative AI, LLM Engineer, Data Scientist, Machine Learning Engineer, ML Engineer, NLP Engineer, Deep Learning Engineer
 ```
 
-**Sample output:**
-```
-==================================================
-   Naukri Bot — Application Stats
-==================================================
-   Today (2026-03-19)  : 107 applications
-   All time total      : 1,240 applications
-   Skip list size      : 143 jobs
-==================================================
-
-   Daily breakdown:
-   2026-03-19  →  107 applied
-   2026-03-18  →  98 applied
-   2026-03-17  →  112 applied
+#### 2. Python & Backend Developer:
+```env
+SEARCH_KEYWORDS=Python Developer, Backend Developer, Django Developer, FastAPI Developer, Python Backend Engineer, Software Engineer Backend
 ```
 
----
-
-### Step 8 — Stop the Bot
-
-Press `Ctrl+C` in the terminal at any time to stop. The bot will:
-- Print a final summary
-- Save the skip list
-- Close the browser cleanly
-
----
-
-## ⚙️ Configuration Options
-
-You can tweak these settings inside `naukri_bot.py` at the top of the file:
-
-| Variable | Default | Description |
-|---|---|---|
-| `BATCH_SIZE` | `5` | How many jobs to select per batch |
-| `HEADLESS` | `False` | Set `True` to run browser invisibly in background |
-| `RECOMMENDED_URL` | Naukri recommended jobs page | The page the bot applies from |
-
----
-
-## 🤖 How the Chatbot Handler Works
-
-When a recruiter has set up screening chatbot questions, the bot auto-detects and answers them:
-
-| Question keyword | Answer used |
-|---|---|
-| notice / days / joining | `NOTICE_PERIOD` from `.env` |
-| current ctc / current salary | `CURRENT_CTC` from `.env` |
-| expected / expectation | `EXPECTED_CTC` from `.env` |
-| yes/no questions | Automatically clicks **Yes** |
-| anything else | `TOTAL_EXPERIENCE` from `.env` |
-
----
-
-## ❓ Troubleshooting
-
-**Bot not logging in?**
-- Double check `NAUKRI_EMAIL` and `NAUKRI_PASSWORD` in your `.env` file
-- Try logging in manually on Naukri first to confirm credentials work
-- Check if Naukri is asking for OTP — complete it once manually, then rerun
-
-**`playwright install` fails?**
-```bash
-pip install playwright --upgrade
-playwright install chromium
+#### 3. Full Stack & Software Engineering:
+```env
+SEARCH_KEYWORDS=Full Stack Developer, Full Stack Engineer, Software Engineer, Software Developer, SDE 2, SDE 1, Node.js Developer
 ```
 
-**`ModuleNotFoundError: No module named 'dotenv'`?**
-```bash
-pip install python-dotenv
+#### 4. Data Engineering & Analytics:
+```env
+SEARCH_KEYWORDS=Data Engineer, Data Analyst, Big Data Engineer, PySpark Developer, Analytics Engineer, ETL Developer
 ```
 
-**Bot keeps skipping all jobs?**
-- Delete `skip_list.json` to reset the skip list and start fresh
-- This is normal if you've already applied to most recommended jobs
-
-**Browser opens but nothing happens?**
-- Your Naukri recommended jobs page might be empty
-- Log in manually and check if you have recommended jobs showing
+> **Priority Engine Note:** The bot automatically identifies AI/ML/Data Science roles and applies to them before standard software developer roles when scanning search results.
 
 ---
 
-## 🔒 Security Notes
+## ▶️ How to Run the Bot
 
-- Your `.env` file is **never uploaded to GitHub** — it's in `.gitignore`
-- `skip_list.json` and `naukri_applications_log.json` are also excluded from Git
-- Never share your `.env` file with anyone
-- Never hardcode your email/password directly in `naukri_bot.py`
+### Method 1: Windows 1-Click Runner (Easiest)
+Simply double-click the **`run_bot.bat`** file located in `apply_job/`.
+It activates `.venv` automatically and launches `job_bot.py`.
+
+### Method 2: Command Line (PowerShell / CMD)
+```powershell
+# Navigate to directory
+cd C:\Users\ank79\OneDrive\Desktop\job_j\apply_job
+
+# Activate virtual environment
+.\.venv\Scripts\Activate.ps1
+
+# Run the bot
+python job_bot.py
+```
+*(You can also run `python naukri_bot.py` which executes `job_bot.py` via alias).*
+
+### What happens after starting:
+1. Playwright opens a browser window.
+2. Navigates to `naukri.com` and logs into your account.
+3. If an **OTP** or captcha appears during your first login, the terminal will wait for you to complete it once.
+4. Searches through your configured `SEARCH_KEYWORDS` one by one.
+5. Scans job cards, analyzes salaries, and skips below-threshold postings.
+6. Clicks **Apply**, handles screening questionnaires, and logs successful submissions.
 
 ---
 
-## ⚠️ Disclaimer
+## ⏹️ How to Stop the Bot
 
-This tool is built for personal use to streamline a job search. Use responsibly and in accordance with Naukri's terms of service. The author is not responsible for any account restrictions resulting from automated activity.
+### Method 1: Graceful Keyboard Interrupt
+Click on the running command terminal window and press:
+```
+Ctrl + C
+```
+The bot handles the signal cleanly:
+- Closes the active browser instance.
+- Flushes and saves `skip_list.json`.
+- Safely writes all pending application records to `naukri_applications_log.json`.
+
+### Method 2: Process Termination (If Unresponsive)
+If the terminal window is frozen or running in the background:
+
+- **Via CMD/PowerShell:**
+  ```powershell
+  taskkill /F /IM python.exe /T
+  ```
+
+- **Via `stop_bot.bat`:**
+  If you have the `stop_bot.bat` script in the root directory, double-click it to terminate all running Python and browser automation processes.
 
 ---
 
-## 👤 Author
+## 📊 Checking Application Stats & Logs
 
-**Ajaykumar Gupta** — Software Engineer & DevOps Professional, Mumbai
+To check how many jobs you have applied to today and overall:
 
-- 🔗 LinkedIn: [linkedin.com/in/ajaykumar-gupta-62a640286](https://linkedin.com/in/ajaykumar-gupta-62a640286)
-- 💼 Portfolio: [crio.do/learn/portfolio/ag5224741](https://www.crio.do/learn/portfolio/ag5224741)
-- 💻 GitHub: [github.com/YOUR_USERNAME](https://github.com/Ajay-kumar-gupta-dev/naukri-auto-apply-bot)
+### Method 1: Windows 1-Click Stats Checker
+Double-click **`check_stats.bat`**.
+
+### Method 2: Via Terminal
+```powershell
+python check_jobs.py
+```
+
+### Sample Output:
+```text
+╔══════════════════════════════════════════════════╗
+║   NAUKRI APPLICATION STATS                       ║
+╚══════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  OVERVIEW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Total applications (all time) : 348
+  Applied today (2026-09-24)    : 52
+  Jobs skipped (skip list)      : 114
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  APPLICATIONS BY DATE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  2026-09-24  ██████████████████████████████ 52
+  2026-09-23  ████████████████████████████████████████ 68
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  TOP 15 COMPANIES APPLIED TO (ALL TIME)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    4x  Accenture
+    3x  TCS
+    3x  Persistent Systems
+    2x  LTIMindtree
+```
+
+### Direct Verification on Naukri:
+Verify applied jobs anytime directly in your browser:
+👉 [https://www.naukri.com/mnjuser/appliedjobs](https://www.naukri.com/mnjuser/appliedjobs)
 
 ---
 
-## ⭐ If this helped you
+## 🧠 How the Smart Logic Works
 
-Give it a star on GitHub — it helps others find it too!
+### 1. Salary Parser & Filter
+- **Undisclosed / Confidential:** Always approved. Many top tier companies don't disclose compensation upfront.
+- **Disclosed Ranges (e.g. 10 - 15 LPA):** The bot parses the upper bound (`15 LPA`). If `15 >= MIN_SALARY_LPA`, it proceeds; if the upper bound is less than `MIN_SALARY_LPA`, it skips the job.
+
+### 2. Recruiter Screening Chatbot Auto-Response
+Recruiters frequently ask pre-application screening questions. The bot matches regex keywords:
+- **Notice Period / Availability:** Filled with `NOTICE_PERIOD`.
+- **Current CTC / Fixed Salary:** Filled with `CURRENT_CTC`.
+- **Expected CTC / Expectation:** Filled with `EXPECTED_CTC`.
+- **Experience / Total Experience:** Filled with `TOTAL_EXPERIENCE`.
+- **Yes/No Radio Buttons:** Selected affirmatively (Yes) by default to pass initial screening filters.
+
+### 3. Persistent Skip Memory
+Every job is assigned an MD5 hash derived from `job_title + company`. When a job is successfully applied or skipped due to errors, its hash is recorded in `skip_list.json`. Subsequent runs immediately skip these jobs without clicking or loading their pages.
+
+---
+
+## 🛠️ Troubleshooting & FAQs
+
+### Q1: The browser asks for an OTP on login.
+**Solution:** On your first run, Naukri may send an OTP to your phone or email. Enter the OTP in the browser window opened by the bot. Once logged in, session cookies keep you authenticated.
+
+### Q2: How do I reset the bot to re-apply or re-check skipped jobs?
+**Solution:** Delete or clear `skip_list.json`. The bot will treat all listings as brand new.
+
+### Q3: "playwright is not recognized as an internal or external command"
+**Solution:** Ensure your virtual environment is activated (`.\.venv\Scripts\Activate.ps1`) before running `playwright install chromium`.
+
+### Q4: Can I run this in headless mode (without opening a visible browser window)?
+**Solution:** Open `job_bot.py` and ensure `headless=True` in the `browser.launch()` call. (Default is visible so you can monitor progress and handle any security checks).
+
+### Q5: Will this get my Naukri account banned?
+**Solution:** The bot includes human-like delays, batch throttling, and pagination limits (`MAX_APPLIES_PER_KEYWORD`). To maintain good standing, avoid setting `MAX_APPLIES_PER_KEYWORD` to extreme numbers and stick to realistic values (30–50 applications per keyword).
+
